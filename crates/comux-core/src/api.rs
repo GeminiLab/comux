@@ -100,6 +100,7 @@ pub struct ApiErrorBody {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiError {
+    #[serde(rename = "type")]
     pub error_type: String,
     pub message: String,
 }

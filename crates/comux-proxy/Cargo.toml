@@ -7,13 +7,20 @@ license.workspace = true
 [dependencies]
 axum.workspace = true
 bytes.workspace = true
+clap.workspace = true
 comux-core = { path = "../comux-core" }
 futures-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+tower.workspace = true
