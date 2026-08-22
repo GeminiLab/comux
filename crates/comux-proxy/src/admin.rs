@@ -81,7 +81,11 @@ async fn stats(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
     Json(app.proxy.stats.snapshot()).into_response()
 }
 
-async fn list_upstreams(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
+async fn list_upstreams(
+    State(app): State<AdminApp>,
+    headers: HeaderMap,
+    Query(query): Query<RevealQuery>,
+) -> Response {
     if !authorized(&app, &headers).await {
         return api_error(
             StatusCode::UNAUTHORIZED,
@@ -95,12 +99,21 @@ async fn list_upstreams(State(app): State<AdminApp>, headers: HeaderMap) -> Resp
         .upstreams
         .iter()
         .map(|(name, upstream)| {
-            UpstreamSummary::masked(
-                name,
-                upstream.base_url.clone(),
-                &upstream.auth_token,
-                upstream.redirect_policy.clone(),
-            )
+            if query.reveal.as_deref() == Some("full") {
+                UpstreamSummary {
+                    name: name.clone(),
+                    base_url: upstream.base_url.clone(),
+                    auth_token: upstream.auth_token.clone(),
+                    redirect_policy: upstream.redirect_policy.clone(),
+                }
+            } else {
+                UpstreamSummary::masked(
+                    name,
+                    upstream.base_url.clone(),
+                    &upstream.auth_token,
+                    upstream.redirect_policy.clone(),
+                )
+            }
         })
         .collect();
     Json(upstreams).into_response()
@@ -227,7 +240,11 @@ async fn client_token(
     Json(ClientTokenResponse { token }).into_response()
 }
 
-async fn regenerate_client_token(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
+async fn regenerate_client_token(
+    State(app): State<AdminApp>,
+    headers: HeaderMap,
+    Query(query): Query<RevealQuery>,
+) -> Response {
     if !authorized(&app, &headers).await {
         return api_error(
             StatusCode::UNAUTHORIZED,
@@ -246,10 +263,12 @@ async fn regenerate_client_token(State(app): State<AdminApp>, headers: HeaderMap
         );
     }
     *state = candidate;
-    Json(ClientTokenResponse {
-        token: mask_token(&token),
-    })
-    .into_response()
+    let token = if query.reveal.as_deref() == Some("full") {
+        token
+    } else {
+        mask_token(&token)
+    };
+    Json(ClientTokenResponse { token }).into_response()
 }
 
 fn api_error(status: StatusCode, error_type: &str, message: &str) -> Response {

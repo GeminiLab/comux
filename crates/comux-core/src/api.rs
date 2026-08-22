@@ -53,7 +53,7 @@ pub struct ClientTokenResponse {
     pub token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct TransportStats {
     pub accepted_requests: u64,
     pub responses_2xx: u64,
@@ -67,25 +67,6 @@ pub struct TransportStats {
     pub duration_total_ms: u64,
     pub duration_max_ms: u64,
     pub active_streams: u64,
-}
-
-impl Default for TransportStats {
-    fn default() -> Self {
-        Self {
-            accepted_requests: 0,
-            responses_2xx: 0,
-            responses_3xx: 0,
-            responses_4xx: 0,
-            responses_5xx: 0,
-            network_errors: 0,
-            request_bytes: 0,
-            response_bytes: 0,
-            duration_count: 0,
-            duration_total_ms: 0,
-            duration_max_ms: 0,
-            active_streams: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

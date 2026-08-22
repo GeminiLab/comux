@@ -53,12 +53,11 @@ pub async fn forward_request(
                 let recorded = Arc::clone(&recorded);
                 move |chunk| {
                     chunk
-                        .map(|bytes| {
+                        .inspect(|bytes| {
                             recorded
                                 .lock()
                                 .expect("body recorder lock")
                                 .push(bytes.clone());
-                            bytes
                         })
                         .map_err(|error| std::io::Error::other(error.to_string()))
                 }

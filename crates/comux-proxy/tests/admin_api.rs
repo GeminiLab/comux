@@ -32,7 +32,7 @@ async fn every_admin_route_requires_admin_token() {
         .uri("/api/v1/status")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::UNAUTHORIZED);
 }
 
@@ -45,11 +45,21 @@ async fn status_and_upstream_list_mask_tokens() {
         .header("authorization", "Bearer admin-secret")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), http::StatusCode::OK);
     let value: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(value[0]["auth_token"], "upst*******cret");
+
+    let request = axum::http::Request::builder()
+        .uri("/api/v1/upstreams?reveal=full")
+        .header("authorization", "Bearer admin-secret")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(value[0]["auth_token"], "upstream-secret");
 }
 
 #[tokio::test]
@@ -75,6 +85,34 @@ async fn client_token_reveal_requires_explicit_query() {
     let full: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(full["token"], "client-secret");
+}
+
+#[tokio::test]
+async fn regeneration_is_masked_unless_full_reveal_is_requested() {
+    let (app, directory) = app();
+    let router = app.admin_router(directory.path().join("proxy.toml"));
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/client-token/regenerate")
+        .header("authorization", "Bearer admin-secret")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    let masked: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert!(masked["token"].as_str().unwrap().contains('*'));
+
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/v1/auth/client-token/regenerate?reveal=full")
+        .header("authorization", "Bearer admin-secret")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let full: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(full["token"].as_str().unwrap().len(), 43);
+    assert!(!full["token"].as_str().unwrap().contains('*'));
 }
 
 #[tokio::test]

@@ -9,8 +9,10 @@ use http_body_util::BodyExt;
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
+type SeenRequestValue = (String, String, Vec<u8>);
+
 #[derive(Clone, Default)]
-struct SeenRequest(Arc<Mutex<Option<(String, String, Vec<u8>)>>>);
+struct SeenRequest(Arc<Mutex<Option<SeenRequestValue>>>);
 
 async fn mock_upstream(State(seen): State<SeenRequest>, request: Request) -> Response {
     let authorization = request

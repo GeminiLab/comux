@@ -55,12 +55,12 @@ pub fn load_cli_config(path: &Path) -> Result<Option<CliConfig>, ConfigError> {
     let source = fs::read_to_string(path)?;
     let config = toml::from_str::<CliConfig>(&source)
         .map_err(|error| ConfigError::Serialization(format!("invalid CLI TOML: {error}")))?;
-    config.validate()?;
+    config.validate_partial()?;
     Ok(Some(config))
 }
 
 pub fn save_cli_config(path: &Path, config: &CliConfig) -> Result<(), ConfigError> {
-    config.validate()?;
+    config.validate_partial()?;
     save_toml(path, config)
 }
 
@@ -150,5 +150,17 @@ mod tests {
             load_cli_config(&path).expect("load CLI config"),
             Some(config)
         );
+    }
+
+    #[test]
+    fn cli_config_can_temporarily_store_one_missing_key() {
+        let directory = tempdir().expect("temporary directory");
+        let path = directory.path().join("cli.toml");
+        let config = CliConfig {
+            admin_endpoint: "http://127.0.0.1:6609".to_owned(),
+            admin_token: String::new(),
+        };
+        save_cli_config(&path, &config).expect("save partial CLI config");
+        assert_eq!(load_cli_config(&path).unwrap(), Some(config));
     }
 }

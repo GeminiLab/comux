@@ -1,0 +1,22 @@
+# comux proxy configuration. Keep this file private: it contains all upstream tokens.
+active_upstream = "openai"
+
+[admin]
+bind = "127.0.0.1"
+port = 6609
+token = "replace-with-a-generated-admin-token"
+
+[downstream]
+bind = "127.0.0.1"
+port = 6608
+token = "replace-with-a-generated-client-token"
+
+[connection]
+connect_timeout_secs = 10
+idle_timeout_secs = 120
+
+[upstreams.openai]
+base_url = "https://api.openai.com/v1"
+auth_token = "replace-with-your-upstream-token"
+# always follows and replays redirects, default uses reqwest defaults, never rejects them.
+redirect_policy = "default"

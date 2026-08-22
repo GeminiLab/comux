@@ -6,19 +6,14 @@ use crate::ConfigError;
 
 const NULL_UPSTREAM: &str = "null";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RedirectPolicy {
     Always,
     #[serde(rename = "default")]
+    #[default]
     Default,
     Never,
-}
-
-impl Default for RedirectPolicy {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,16 +152,26 @@ impl ProxyConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CliConfig {
+    #[serde(default)]
     pub admin_endpoint: String,
+    #[serde(default)]
     pub admin_token: String,
 }
 
 impl CliConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.validate_partial()?;
         if self.admin_token.is_empty() {
             return Err(ConfigError::Invalid(
                 "admin token must not be empty".to_owned(),
             ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_partial(&self) -> Result<(), ConfigError> {
+        if self.admin_endpoint.is_empty() {
+            return Ok(());
         }
         let endpoint = Url::parse(&self.admin_endpoint)
             .map_err(|error| ConfigError::Invalid(format!("invalid admin endpoint: {error}")))?;
@@ -268,15 +273,17 @@ mod tests {
         config.admin.port = 0;
         assert!(config.validate().is_err());
 
-        let mut config = ProxyConfig::default();
-        config.upstreams = BTreeMap::from([(
-            "bad".to_owned(),
-            super::UpstreamConfig {
-                base_url: "file:///tmp/nope".to_owned(),
-                auth_token: "secret".to_owned(),
-                redirect_policy: RedirectPolicy::Default,
-            },
-        )]);
+        let config = ProxyConfig {
+            upstreams: BTreeMap::from([(
+                "bad".to_owned(),
+                super::UpstreamConfig {
+                    base_url: "file:///tmp/nope".to_owned(),
+                    auth_token: "secret".to_owned(),
+                    redirect_policy: RedirectPolicy::Default,
+                },
+            )]),
+            ..ProxyConfig::default()
+        };
         assert!(config.validate().is_err());
     }
 
