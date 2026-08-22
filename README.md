@@ -9,6 +9,14 @@ cargo build --workspace
 cargo run -p comux-proxy -- --config /path/to/comux.toml
 ```
 
+通过 `cargo run` 启动时，`--` 是必须的：它把后面的参数交给 `comux-proxy`，否则 Cargo 会把 `--config` 当成自己的配置参数并尝试解析 TOML。直接运行已编译的代理时不需要这个分隔符：
+
+```sh
+cargo run -p comux-proxy -- --config "./1.config"
+# 或
+./target/debug/comux-proxy --config "./1.config"
+```
+
 The proxy configuration path is always supplied with `--config`. If `admin.token` or `downstream.token` is empty or absent, the proxy generates a token, atomically writes the file, and prints each generated token once. The default listeners are loopback only: downstream `127.0.0.1:6608` and admin `127.0.0.1:6609` (the hostname `localhost` is also valid). Set `bind` explicitly when exposing either listener on another interface.
 
 An example configuration is in [examples/comux.proxy.toml](examples/comux.proxy.toml).
