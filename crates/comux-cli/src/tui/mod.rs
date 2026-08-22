@@ -51,10 +51,8 @@ where
             .unwrap_or(Duration::ZERO);
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let Some(action) = events::action(key) {
-                    if app.handle(action).await {
-                        break;
-                    }
+                if app.handle_key(key).await {
+                    break;
                 }
             }
         } else {

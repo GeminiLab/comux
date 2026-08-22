@@ -33,7 +33,7 @@ comux upstream list
 comux auth print
 ```
 
-When `set` has no value, the CLI prompts. Admin tokens are hidden at the prompt. All normal output masks tokens by keeping only the first and last four characters; pass `--dangerously-print-full-token` when a full value is explicitly required. `--endpoint` and `--admin-token` are temporary overrides. Running `comux` without a subcommand opens the ratatui dashboard; `j`/`k` select an upstream, Enter activates it, `d` deletes it, `r` refreshes, and `t` regenerates the downstream client token.
+When `set` has no value, the CLI prompts. Admin tokens are hidden at the prompt. All normal output masks tokens by keeping only the first and last four characters; pass `--dangerously-print-full-token` when a full value is explicitly required. `--endpoint` and `--admin-token` are temporary overrides. Running `comux` without a subcommand opens the ratatui dashboard; `j`/`k` select an upstream, Enter activates it, `a` opens the add-upstream form, `d` deletes the selected upstream, `r` refreshes, and `t` regenerates the downstream client token. In the add form, Enter advances or submits, Left/Right changes redirect policy, and Esc cancels.
 
 ## Configuration model
 

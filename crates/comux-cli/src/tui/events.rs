@@ -9,6 +9,7 @@ pub enum Action {
     Select,
     Remove,
     RegenerateToken,
+    Add,
 }
 
 pub fn action(key: KeyEvent) -> Option<Action> {
@@ -20,6 +21,21 @@ pub fn action(key: KeyEvent) -> Option<Action> {
         (KeyCode::Enter, _) => Some(Action::Select),
         (KeyCode::Char('d'), KeyModifiers::NONE) => Some(Action::Remove),
         (KeyCode::Char('t'), KeyModifiers::NONE) => Some(Action::RegenerateToken),
+        (KeyCode::Char('a'), KeyModifiers::NONE) => Some(Action::Add),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{action, Action};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn maps_a_to_add_upstream() {
+        assert_eq!(
+            action(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
+            Some(Action::Add)
+        );
     }
 }

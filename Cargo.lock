@@ -371,6 +371,7 @@ dependencies = [
 name = "comux"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "clap",
  "comux-core",
  "crossterm",
