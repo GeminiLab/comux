@@ -14,6 +14,7 @@ pub struct App {
     pub message: String,
     pub show_full_tokens: bool,
     pub add_form: Option<AddUpstreamForm>,
+    selection_initialized: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +70,7 @@ impl App {
             message: "connecting...".into(),
             show_full_tokens,
             add_form: None,
+            selection_initialized: false,
         }
     }
 
@@ -85,6 +87,10 @@ impl App {
             client.upstreams(false).await,
         ) {
             (Ok(status), Ok(stats), Ok(upstreams)) => {
+                if !self.selection_initialized {
+                    self.selected = selected_index_for_active(&status.active_upstream, &upstreams);
+                    self.selection_initialized = true;
+                }
                 self.status = Some(status);
                 self.stats = Some(stats);
                 self.upstreams = upstreams;
@@ -224,6 +230,13 @@ impl App {
     }
 }
 
+fn selected_index_for_active(active: &str, upstreams: &[UpstreamSummary]) -> usize {
+    upstreams
+        .iter()
+        .position(|upstream| upstream.name == active)
+        .unwrap_or(0)
+}
+
 fn current_value_mut(form: &mut AddUpstreamForm) -> &mut String {
     match form.field {
         AddField::Name => &mut form.name,
@@ -273,7 +286,7 @@ fn validate_field(form: &AddUpstreamForm) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AddField, App};
+    use super::{selected_index_for_active, AddField, App};
     use crate::client::ApiClient;
     use crate::tui::events::Action;
     use axum::extract::State;
@@ -285,6 +298,26 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     type Received = Arc<Mutex<Option<(String, UpstreamMutation)>>>;
+
+    #[test]
+    fn initial_selection_follows_active_upstream() {
+        let upstreams = vec![
+            comux_core::api::UpstreamSummary {
+                name: "first".into(),
+                base_url: "https://first.example".into(),
+                auth_token: "masked".into(),
+                redirect_policy: comux_core::RedirectPolicy::Default,
+            },
+            comux_core::api::UpstreamSummary {
+                name: "active".into(),
+                base_url: "https://active.example".into(),
+                auth_token: "masked".into(),
+                redirect_policy: comux_core::RedirectPolicy::Default,
+            },
+        ];
+        assert_eq!(selected_index_for_active("active", &upstreams), 1);
+        assert_eq!(selected_index_for_active("null", &upstreams), 0);
+    }
 
     #[tokio::test]
     async fn add_action_opens_form_and_escape_cancels_it() {
