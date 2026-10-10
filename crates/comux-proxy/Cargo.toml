@@ -2,13 +2,22 @@
 name = "comux-proxy"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+include.workspace = true
+description = "Local Codex API proxy with authenticated upstream switching and management"
+readme = "README.md"
+documentation = "https://docs.rs/comux-proxy"
+categories = ["network-programming", "command-line-utilities"]
 
 [dependencies]
 axum.workspace = true
 bytes.workspace = true
 clap.workspace = true
-comux-core = { path = "../comux-core" }
+comux-core.workspace = true
 futures-util.workspace = true
 http.workspace = true
 http-body-util.workspace = true

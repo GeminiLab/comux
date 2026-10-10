@@ -2,7 +2,16 @@
 name = "comux-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+include.workspace = true
+description = "Shared configuration, management API types, and runtime state for comux"
+readme = "README.md"
+documentation = "https://docs.rs/comux-core"
+categories = ["config", "network-programming"]
 
 [dependencies]
 base64.workspace = true
@@ -12,4 +21,3 @@ tempfile.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 url.workspace = true
-

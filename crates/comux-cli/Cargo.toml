@@ -2,11 +2,20 @@
 name = "comux"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+include.workspace = true
+description = "CLI and terminal dashboard for switching Codex API upstreams through comux-proxy"
+readme = "README.md"
+documentation = "https://docs.rs/comux"
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap.workspace = true
-comux-core = { path = "../comux-core" }
+comux-core.workspace = true
 crossterm.workspace = true
 dirs.workspace = true
 ratatui.workspace = true

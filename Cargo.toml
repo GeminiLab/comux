@@ -4,10 +4,16 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+rust-version = "1.88"
 version = "0.1.0"
 license = "MIT"
+repository = "https://github.com/GeminiLab/comux"
+homepage = "https://github.com/GeminiLab/comux#readme"
+keywords = ["codex", "proxy", "openai", "switch"]
+include = ["/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE", "/src/**", "/tests/**"]
 
 [workspace.dependencies]
+comux-core = { path = "crates/comux-core", version = "0.1.0" }
 axum = "0.8"
 base64 = "0.23"
 bytes = "1"

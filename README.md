@@ -40,7 +40,16 @@ the proxy process restarts.
 
 ## Requirements and installation
 
-Install a stable Rust toolchain with Cargo, then build the complete workspace:
+Install Rust 1.88 or newer with Cargo. Both binaries are needed: `comux-proxy`
+runs the proxy, while `comux` manages it. Once a release is available on
+crates.io, install them with:
+
+```sh
+cargo install --locked comux-proxy
+cargo install --locked comux
+```
+
+Alternatively, build the complete workspace from a checkout:
 
 ```sh
 cargo build --workspace
@@ -49,8 +58,8 @@ cargo build --workspace
 You can install both binaries from the checkout:
 
 ```sh
-cargo install --path crates/comux-proxy
-cargo install --path crates/comux-cli
+cargo install --locked --path crates/comux-proxy
+cargo install --locked --path crates/comux-cli
 ```
 
 To run without installing:
@@ -519,6 +528,9 @@ The crate-specific documentation is available in:
 - [`comux-proxy`](crates/comux-proxy/README.md)
 - [`comux` CLI/TUI](crates/comux-cli/README.md)
 
+For package verification and the crates.io publication order, see the
+[release guide](docs/PUBLISHING.md).
+
 ## License
 
-comux is licensed under the MIT License.
+comux is licensed under the [MIT License](LICENSE).
