@@ -400,7 +400,6 @@ dependencies = [
  "base64 0.23.1",
  "rand 0.8.7",
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "toml",
