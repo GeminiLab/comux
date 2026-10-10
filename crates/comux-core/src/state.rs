@@ -1,33 +1,47 @@
+//! Validated mutable proxy state shared by the data and management planes.
+
 use crate::config::{ProxyConfig, UpstreamConfig};
 use crate::error::ConfigError;
 use crate::secrets::generate_token;
 use thiserror::Error;
 
+/// An error produced while mutating runtime proxy state.
 #[derive(Debug, Error)]
 pub enum StateError {
+    /// The requested upstream name is not configured.
     #[error("upstream {0:?} was not found")]
     UnknownUpstream(String),
+    /// An insertion requires a new name but the name is already configured.
     #[error("upstream {0:?} already exists")]
     DuplicateUpstream(String),
+    /// The resulting complete proxy configuration would be invalid.
     #[error(transparent)]
     InvalidConfig(#[from] ConfigError),
 }
 
+/// Validated proxy configuration used for routing and management operations.
 #[derive(Debug, Clone)]
 pub struct RuntimeState {
+    /// The complete configuration currently visible to new operations.
     config: ProxyConfig,
 }
 
 impl RuntimeState {
+    /// Creates runtime state after validating the complete configuration.
     pub fn new(config: ProxyConfig) -> Result<Self, ConfigError> {
         config.validate()?;
         Ok(Self { config })
     }
 
+    /// Borrows the complete configuration currently held in memory.
     pub fn config(&self) -> &ProxyConfig {
         &self.config
     }
 
+    /// Clones the selected upstream name and configuration for one request.
+    ///
+    /// The owned snapshot is unaffected by later management mutations. Returns
+    /// `None` when the active name is the reserved `null` value.
     pub fn snapshot_active_upstream(&self) -> Option<(String, UpstreamConfig)> {
         let name = &self.config.active_upstream;
         self.config
@@ -37,6 +51,7 @@ impl RuntimeState {
             .map(|upstream| (name.clone(), upstream))
     }
 
+    /// Inserts or replaces an upstream after validating the resulting state.
     pub fn replace_upstream(
         &mut self,
         name: impl Into<String>,
@@ -48,6 +63,8 @@ impl RuntimeState {
                 "upstream name is reserved or empty".to_owned(),
             )));
         }
+        // Validate a complete candidate before replacing live state, leaving
+        // the current configuration untouched when the mutation is invalid.
         let mut candidate = self.config.clone();
         candidate.upstreams.insert(name, upstream);
         candidate.validate()?;
@@ -55,7 +72,13 @@ impl RuntimeState {
         Ok(())
     }
 
+    /// Removes an upstream and selects `null` when it was active.
+    ///
+    /// Returns [`StateError::UnknownUpstream`] without changing state when the
+    /// name is not configured.
     pub fn delete_upstream(&mut self, name: &str) -> Result<(), StateError> {
+        // Validate a complete candidate before replacing live state, leaving
+        // the current configuration untouched when the mutation is invalid.
         let mut candidate = self.config.clone();
         if candidate.upstreams.remove(name).is_none() {
             return Err(StateError::UnknownUpstream(name.to_owned()));
@@ -68,10 +91,15 @@ impl RuntimeState {
         Ok(())
     }
 
+    /// Selects an existing upstream for new downstream requests.
+    ///
+    /// Existing request snapshots retain their previous selection.
     pub fn select_upstream(&mut self, name: &str) -> Result<(), StateError> {
         if !self.config.upstreams.contains_key(name) {
             return Err(StateError::UnknownUpstream(name.to_owned()));
         }
+        // Validate a complete candidate before replacing live state, leaving
+        // the current configuration untouched when the mutation is invalid.
         let mut candidate = self.config.clone();
         candidate.active_upstream = name.to_owned();
         candidate.validate()?;
@@ -79,6 +107,7 @@ impl RuntimeState {
         Ok(())
     }
 
+    /// Replaces the downstream client token and returns its full new value.
     pub fn regenerate_client_token(&mut self) -> String {
         let token = generate_token();
         self.config.downstream.token = token.clone();

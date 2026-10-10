@@ -1,39 +1,60 @@
+//! Persisted proxy and CLI configuration schemas and validation rules.
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use url::Url;
 
 use crate::ConfigError;
 
+/// Reserved active-upstream name representing no selected target.
 const NULL_UPSTREAM: &str = "null";
 
+/// Controls how requests to an upstream handle HTTP redirects.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RedirectPolicy {
+    /// Comux follows redirects and injects the upstream token on every hop.
+    ///
+    /// This includes cross-host redirects and must be used only with trusted
+    /// redirect targets.
     Always,
+    /// Uses reqwest's default redirect behavior.
     #[serde(rename = "default")]
     #[default]
     Default,
+    /// Returns redirect responses to the downstream client without following them.
     Never,
 }
 
+/// Connection and authentication settings for one named upstream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpstreamConfig {
+    /// The HTTP or HTTPS base URL to which downstream paths are appended.
     pub base_url: String,
+    /// The sensitive bearer token sent to this upstream.
     pub auth_token: String,
+    /// The policy applied when this upstream returns a redirect.
     #[serde(default)]
     pub redirect_policy: RedirectPolicy,
 }
 
+/// Bind address and bearer credential for one proxy listener.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListenerConfig {
+    /// The hostname or IP address on which to listen.
     #[serde(default = "default_bind")]
     pub bind: String,
+    /// The non-zero TCP port on which to listen.
     pub port: u16,
+    /// The bearer token accepted by the listener.
+    ///
+    /// An empty proxy listener token is generated during startup initialization.
     #[serde(default)]
     pub token: String,
 }
 
 impl ListenerConfig {
+    /// Returns the default management listener with an uninitialized token.
     fn admin_default() -> Self {
         Self {
             bind: default_bind(),
@@ -42,6 +63,7 @@ impl ListenerConfig {
         }
     }
 
+    /// Returns the default downstream listener with an uninitialized token.
     fn downstream_default() -> Self {
         Self {
             bind: default_bind(),
@@ -51,15 +73,19 @@ impl ListenerConfig {
     }
 }
 
+/// Timeout settings used when communicating with an upstream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectionConfig {
+    /// Maximum time allowed to establish an upstream connection, in seconds.
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout_secs: u64,
+    /// Maximum idle time between request or response body chunks, in seconds.
     #[serde(default = "default_idle_timeout")]
     pub idle_timeout_secs: u64,
 }
 
 impl Default for ConnectionConfig {
+    /// Uses a 10-second connect timeout and a 120-second body idle timeout.
     fn default() -> Self {
         Self {
             connect_timeout_secs: default_connect_timeout(),
@@ -68,17 +94,24 @@ impl Default for ConnectionConfig {
     }
 }
 
+/// Complete persisted configuration for a proxy process.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProxyConfig {
+    /// The selected upstream name, or the reserved value `null`.
     pub active_upstream: String,
+    /// The separately authenticated management listener.
     pub admin: ListenerConfig,
+    /// The listener that accepts Codex requests.
     pub downstream: ListenerConfig,
+    /// Upstream connection and streaming timeout settings.
     pub connection: ConnectionConfig,
+    /// Named upstream configurations in deterministic key order.
     pub upstreams: BTreeMap<String, UpstreamConfig>,
 }
 
 impl Default for ProxyConfig {
+    /// Creates loopback listeners, default timeouts, and no selected upstream.
     fn default() -> Self {
         Self {
             active_upstream: NULL_UPSTREAM.to_owned(),
@@ -91,6 +124,12 @@ impl Default for ProxyConfig {
 }
 
 impl ProxyConfig {
+    /// Validates the semantic constraints required by a running proxy.
+    ///
+    /// Listener tokens may remain empty because startup initialization
+    /// generates them. Ports and timeouts must be non-zero, the active target
+    /// must exist unless it is `null`, and every upstream must have a valid
+    /// HTTP(S) URL and non-empty credential.
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.admin.port == 0 {
             return Err(ConfigError::Invalid(
@@ -112,6 +151,8 @@ impl ProxyConfig {
                 "idle timeout must be positive".to_owned(),
             ));
         }
+        // The reserved sentinel deliberately selects no target; every other
+        // active name must resolve to a configured upstream.
         if self.active_upstream != NULL_UPSTREAM
             && !self.upstreams.contains_key(&self.active_upstream)
         {
@@ -120,6 +161,8 @@ impl ProxyConfig {
                 self.active_upstream
             )));
         }
+        // Each persisted target must be independently usable before the
+        // configuration can become live state.
         for (name, upstream) in &self.upstreams {
             if name.is_empty() || name == NULL_UPSTREAM {
                 return Err(ConfigError::Invalid(format!(
@@ -150,15 +193,21 @@ impl ProxyConfig {
     }
 }
 
+/// Local CLI connection settings for the proxy management endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CliConfig {
+    /// The HTTP or HTTPS management endpoint URL.
     #[serde(default)]
     pub admin_endpoint: String,
+    /// The bearer token accepted by the management endpoint.
     #[serde(default)]
     pub admin_token: String,
 }
 
 impl CliConfig {
+    /// Validates a complete CLI configuration.
+    ///
+    /// The endpoint must use HTTP or HTTPS and the admin token must be present.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.validate_partial()?;
         if self.admin_token.is_empty() {
@@ -169,6 +218,10 @@ impl CliConfig {
         Ok(())
     }
 
+    /// Validates fields that are currently present in a partial CLI configuration.
+    ///
+    /// A missing endpoint is accepted so interactive setup can save one value
+    /// at a time.
     pub fn validate_partial(&self) -> Result<(), ConfigError> {
         if self.admin_endpoint.is_empty() {
             return Ok(());
@@ -184,14 +237,17 @@ impl CliConfig {
     }
 }
 
+/// Returns the serde default listener host.
 fn default_bind() -> String {
     "localhost".to_owned()
 }
 
+/// Returns the serde default upstream connection timeout in seconds.
 fn default_connect_timeout() -> u64 {
     10
 }
 
+/// Returns the serde default body idle timeout in seconds.
 fn default_idle_timeout() -> u64 {
     120
 }

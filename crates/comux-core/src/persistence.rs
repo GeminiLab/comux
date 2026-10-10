@@ -1,3 +1,5 @@
+//! Atomic loading and saving of proxy and CLI TOML configuration.
+
 use crate::config::{CliConfig, ProxyConfig};
 use crate::error::ConfigError;
 use crate::secrets::generate_token;
@@ -6,13 +8,22 @@ use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
 
+/// A proxy configuration together with its startup initialization results.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedProxyConfig {
+    /// The validated configuration ready to become runtime state.
     pub config: ProxyConfig,
+    /// Whether startup generated the admin token and may display it once.
     pub generated_admin_token: bool,
+    /// Whether startup generated the downstream token and may display it once.
     pub generated_downstream_token: bool,
 }
 
+/// Loads a proxy configuration, generating and persisting missing listener tokens.
+///
+/// A missing file starts from [`ProxyConfig::default`]. The returned flags
+/// identify credentials generated during this call so the proxy can display
+/// each new value once.
 pub fn load_proxy_config_or_initialize(path: &Path) -> Result<LoadedProxyConfig, ConfigError> {
     let mut config = if path.exists() {
         let source = fs::read_to_string(path)?;
@@ -22,6 +33,8 @@ pub fn load_proxy_config_or_initialize(path: &Path) -> Result<LoadedProxyConfig,
         ProxyConfig::default()
     };
 
+    // Empty listener tokens are initialization requests, so generate them
+    // before validating and remember which values the caller may print once.
     let generated_admin_token = config.admin.token.is_empty();
     let generated_downstream_token = config.downstream.token.is_empty();
     if generated_admin_token {
@@ -43,11 +56,16 @@ pub fn load_proxy_config_or_initialize(path: &Path) -> Result<LoadedProxyConfig,
     })
 }
 
+/// Validates and atomically saves a complete proxy configuration.
 pub fn save_proxy_config(path: &Path, config: &ProxyConfig) -> Result<(), ConfigError> {
     config.validate()?;
     save_toml(path, config)
 }
 
+/// Loads optional local CLI configuration from `path`.
+///
+/// A missing file returns `Ok(None)`. Present files may omit either setting
+/// while interactive setup is still incomplete.
 pub fn load_cli_config(path: &Path) -> Result<Option<CliConfig>, ConfigError> {
     if !path.exists() {
         return Ok(None);
@@ -59,11 +77,13 @@ pub fn load_cli_config(path: &Path) -> Result<Option<CliConfig>, ConfigError> {
     Ok(Some(config))
 }
 
+/// Validates the fields currently present and atomically saves CLI configuration.
 pub fn save_cli_config(path: &Path, config: &CliConfig) -> Result<(), ConfigError> {
     config.validate_partial()?;
     save_toml(path, config)
 }
 
+/// Serializes `value` and atomically replaces the file at `path`.
 fn save_toml<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ConfigError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
@@ -74,6 +94,8 @@ fn save_toml<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ConfigEr
     temporary.write_all(serialized.as_bytes())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
+    // Persist a fully written and synced sibling temporary file so readers
+    // never observe partially serialized TOML.
     temporary
         .persist(path)
         .map_err(|error| ConfigError::Io(error.error))?;
@@ -82,6 +104,7 @@ fn save_toml<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ConfigEr
 }
 
 #[cfg(unix)]
+/// Restricts a configuration file to its owning user on Unix.
 fn set_private_mode(path: &Path) -> Result<(), ConfigError> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
@@ -89,6 +112,7 @@ fn set_private_mode(path: &Path) -> Result<(), ConfigError> {
 }
 
 #[cfg(not(unix))]
+/// Leaves permissions unchanged where Unix mode bits are unavailable.
 fn set_private_mode(_path: &Path) -> Result<(), ConfigError> {
     Ok(())
 }

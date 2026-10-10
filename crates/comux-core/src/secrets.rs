@@ -1,12 +1,19 @@
+//! Generation of listener credentials and display-safe token masking.
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::RngCore;
 
+/// Generates a token from 32 random bytes using unpadded URL-safe Base64.
 pub fn generate_token() -> String {
     let mut bytes = [0_u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// Masks a token while preserving identifying edges for longer values.
+///
+/// Empty input remains empty. Values shorter than nine Unicode scalar values
+/// are fully masked; longer values preserve four scalar values at each end.
 pub fn mask_token(value: &str) -> String {
     let chars: Vec<char> = value.chars().collect();
     if chars.is_empty() {
