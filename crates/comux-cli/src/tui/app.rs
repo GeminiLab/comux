@@ -21,7 +21,10 @@ pub struct App {
     pub selected: usize,
     /// User-visible connection, success, or error message.
     pub message: String,
-    /// Whether sensitive tokens may be displayed in full.
+    /// Whether fetched token strings bypass an additional local masking pass.
+    ///
+    /// Refresh currently requests masked upstream summaries, so this flag does
+    /// not make the TUI retrieve full credentials.
     pub show_full_tokens: bool,
     /// Active add-upstream form, if the modal is open.
     pub add_form: Option<AddUpstreamForm>,

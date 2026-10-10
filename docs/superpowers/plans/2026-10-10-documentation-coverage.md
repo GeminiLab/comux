@@ -96,8 +96,9 @@ In `config.rs`, add Rustdoc with the following exact semantics:
 - `ListenerConfig::admin_default` and `downstream_default`: default loopback
   host with ports 6609 and 6608 respectively and an empty token that startup
   initialization replaces.
-- `ConnectionConfig`: connect timeout and per-chunk idle timeout, both in
-  seconds; document its `Default::default` values as 10 and 120.
+- `ConnectionConfig`: enforced connect timeout and configured idle-timeout
+  value, both in seconds; document its `Default::default` values as 10 and 120
+  and the current adapter's inability to time waiting for the next chunk.
 - `ProxyConfig`: complete persisted proxy state; document all five fields and
   the `null` active-upstream sentinel.
 - `ProxyConfig::default`: creates loopback listeners, no upstreams, `null`
@@ -150,7 +151,8 @@ In `api.rs`, document every type and field:
   `reveal=full`.
 - `TransportStats`: accepted requests, status-class counts, network failures,
   directional bytes, completed-response duration count/total/max, and current
-  active streams; state that values are process-local.
+  active forwarding requests; state that values are process-local and that
+  `active_streams` begins before connection/request upload completes.
 - `StatsResponse`: statistics keyed by upstream name.
 - `ApiErrorBody`: standard management/data-plane error envelope.
 - `ApiError`: machine-readable `type` and human-readable `message`.
@@ -367,13 +369,15 @@ Do not refactor the repeated handler code in this documentation-only task.
 In `forward.rs`, document:
 
 - `ForwardError` and every variant.
-- `forward_request`: URL joining, hop-by-hop filtering, downstream
-  Authorization replacement, connect timeout, per-body-chunk idle timeout,
-  and redirect-policy differences.
-- `build_request`: copies end-to-end headers while replacing Authorization and
-  omitting hop-by-hop headers.
-- `is_hop_by_hop`: identifies headers that must not be forwarded by this
-  proxy.
+- `forward_request`: URL joining, fixed connection-header filtering,
+  downstream Authorization replacement, connect timeout, the currently
+  ineffective post-yield idle wrapper, and redirect-policy differences.
+- `build_request`: copies headers while replacing Authorization and omitting
+  only the fixed set recognized by `is_hop_by_hop`.
+- `is_hop_by_hop`: identifies `Connection`, `Content-Length`, `Host`, `TE`,
+  `Trailer`, `Transfer-Encoding`, and `Upgrade`, while explicitly documenting
+  that it does not parse Connection-nominated extensions or filter
+  `Keep-Alive` and `Proxy-*`.
 - `join_upstream_url`: appends the downstream path to the configured base path
   and replaces the query with the downstream query.
 
@@ -397,8 +401,8 @@ Add ordinary comments around the `Always` branch:
 Before constructing the downstream response stream, add:
 
 ```rust
-// The idle timeout applies between body chunks rather than to total response
-// duration, allowing long-lived streaming responses that remain active.
+// `then` receives each item only after the source stream yields it, so this
+// wrapper currently does not time the wait for the next response chunk.
 ```
 
 - [ ] **Step 6: Document serving and streaming statistics**
@@ -536,7 +540,8 @@ dispatch, stderr reporting, and non-zero exit on failure.
 In `args.rs`, document every type, field, and variant:
 
 - Global `CliArgs` connection overrides, dangerous full-token flag, and
-  optional command/TUI fallback.
+  optional command/TUI fallback; note that the TUI still fetches masked
+  upstream summaries.
 - `Command::{Status, Upstream, Config, Auth}` and nested action fields.
 - `ConfigCommand` and its optional action, where no action displays resolved
   values.
@@ -601,11 +606,13 @@ In `config.rs`, document:
 
 - `default_config_path`: `$HOME/.config/comux.toml`, with `.` fallback when a
   home directory cannot be determined.
-- `resolve_config`: explicit overrides win over file values and all required
-  fields must be present.
+- `resolve_config`: explicit overrides win over file values; current
+  validation requires a token but permits an empty endpoint, which later
+  client construction rejects.
 - `resolve_config_interactive`: override, then non-empty file value, then
   prompt; only a fully prompted no-override resolution is persisted.
-- `save_value`: update one local key, validate the complete result, and save.
+- `save_value`: update one local key, apply the asymmetric current validation,
+  and save; this permits token-first setup but rejects endpoint-first setup.
 - `non_empty` and `prompt_endpoint`.
 
 Add this ordinary comment before endpoint/token resolution:
@@ -800,8 +807,8 @@ Explain every field and validation rule exactly:
 - Admin/downstream ports: defaults 6609/6608 and must be non-zero.
 - Empty/missing listener token: generated and persisted at proxy startup.
 - `connect_timeout_secs`: default 10, positive, connection establishment only.
-- `idle_timeout_secs`: default 120, positive, request/response body chunk idle
-  timeout rather than total request lifetime.
+- `idle_timeout_secs`: default 120 and positive, but the current post-yield
+  wrapper does not bound waiting for the next request/response body chunk.
 - Upstream names: non-empty and cannot equal `null`.
 - `base_url`: valid HTTP(S), with downstream paths appended after its base
   path.
@@ -822,8 +829,8 @@ comux config
 comux status
 ```
 
-Also document the non-interactive two-command order required by the current
-complete-config validation:
+Also document the non-interactive two-command order required by current
+validation:
 
 ```sh
 comux config set admin-token
@@ -834,7 +841,8 @@ comux status
 State that global `--endpoint` and `--admin-token` override the local file and
 that missing values prompt only on an interactive terminal. Explain that on a
 new file `admin-token` must be stored before `endpoint` when using separate
-`config set` commands, because each completed save is fully validated.
+`config set` commands, because validation requires a token while permitting an
+empty endpoint.
 
 List every command represented in `args.rs`:
 
@@ -852,9 +860,10 @@ comux auth print
 comux auth regenerate [--yes]
 ```
 
-Explain `--dangerously-print-full-token`, token prompts, regeneration
-confirmation, no-subcommand TUI startup, and every TUI key including add-form
-controls.
+Explain `--dangerously-print-full-token`, including that CLI commands can
+request full values while the TUI still fetches masked upstream summaries;
+also cover token prompts, regeneration confirmation, no-subcommand TUI startup,
+and every TUI key including add-form controls.
 
 - [ ] **Step 5: Document the Admin API and errors**
 
@@ -897,14 +906,18 @@ Document the implemented categories and common statuses:
 The security section must distinguish admin, downstream, and upstream tokens;
 recommend loopback listeners; explain `0600` on Unix and the lack of an
 equivalent permission change on non-Unix; warn about `reveal=full`, dangerous
-CLI output, configuration backups, and `always` redirects.
+CLI output, configuration backups, `always` redirects, and the fixed header
+filter's failure to remove `Proxy-*`, `Keep-Alive`, or Connection-nominated
+extension headers.
 
 Troubleshooting must cover:
 
 - Missing Cargo `--` before proxy arguments.
 - 401 on the wrong listener/token.
 - 503 when `active_upstream = "null"` or the active target was deleted.
-- 502 for upstream URL/connectivity/redirect/idle failures.
+- 502 for upstream URL, connectivity, redirect, or connect-timeout failures;
+  explicitly note that the configured idle value does not currently time
+  waiting for the next body chunk.
 - Non-interactive CLI failure when configuration is incomplete.
 - Listener bind failures and occupied ports.
 

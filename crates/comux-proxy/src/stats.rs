@@ -52,13 +52,13 @@ impl StatsRegistry {
     }
 }
 
-/// Ensures an accepted request releases its active-stream count exactly once.
+/// Ensures an accepted request releases its active counter exactly once.
 pub struct RequestStatsGuard {
     /// Registry receiving this request's terminal accounting.
     registry: StatsRegistry,
     /// Upstream key used by this request.
     upstream: String,
-    /// Whether terminal accounting has already released the active stream.
+    /// Whether terminal accounting has already released the active request.
     released: bool,
 }
 
@@ -97,7 +97,7 @@ impl RequestStatsGuard {
         self.released = true;
     }
 
-    /// Records a transport failure and releases the active stream.
+    /// Records a transport failure and releases the active request.
     pub fn network_error(&mut self) {
         if self.released {
             return;
@@ -111,7 +111,7 @@ impl RequestStatsGuard {
 }
 
 impl Drop for RequestStatsGuard {
-    /// Releases an abandoned stream without inventing a response or network error.
+    /// Releases an abandoned request without inventing a response or network error.
     fn drop(&mut self) {
         if !self.released {
             self.registry.with_stats(&self.upstream, |stats| {

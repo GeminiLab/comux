@@ -106,7 +106,7 @@ pub struct TransportStats {
     pub duration_total_ms: u64,
     /// Longest completed response duration in milliseconds.
     pub duration_max_ms: u64,
-    /// Response streams that have started but have not yet been released.
+    /// Accepted forwarding requests not yet terminally accounted or released.
     pub active_streams: u64,
 }
 

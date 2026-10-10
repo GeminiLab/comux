@@ -146,9 +146,10 @@ Both `[admin]` and `[downstream]` use the same fields:
 
 - `connect_timeout_secs` defaults to `10`, must be positive, and limits
   upstream connection establishment.
-- `idle_timeout_secs` defaults to `120`, must be positive, and limits idle time
-  between request or response body chunks. It is not a total request-duration
-  limit, so active long-lived streams can remain open.
+- `idle_timeout_secs` defaults to `120` and must be positive. The current
+  stream adapter applies its timeout only after a body chunk has already
+  arrived, so it does **not** currently bound the wait for the next request or
+  response chunk.
 
 ### Upstream fields
 
@@ -170,9 +171,12 @@ Redirect behavior:
 - `never` does not follow redirects and returns the upstream redirect response
   to Codex.
 
-Hop-by-hop transport headers are removed in both directions. Other downstream
-headers are forwarded except Authorization, which is replaced by the selected
-upstream token.
+comux filters a fixed set of connection-specific headers in both directions:
+`Connection`, `Content-Length`, `Host`, `TE`, `Trailer`, `Transfer-Encoding`,
+and `Upgrade`. It does not currently parse extension headers named by
+`Connection`, or filter `Keep-Alive`, `Proxy-Authenticate`, and
+`Proxy-Authorization`. Other downstream headers are forwarded except
+Authorization, which is replaced by the selected upstream token.
 
 ### Persistence
 
@@ -208,8 +212,8 @@ comux status
 ```
 
 For separate `config set` calls on a new file, store the admin token first.
-The current command validates the complete configuration after every update,
-so setting the endpoint first would leave a missing token and fail validation:
+Current validation requires a non-empty token but permits an empty endpoint,
+so the token-first update succeeds while an endpoint-first update fails:
 
 ```sh
 comux config set admin-token
@@ -221,9 +225,11 @@ Omitting a `set` value prompts for it; admin-token input is hidden. The global
 Resolution order is command-line override, non-empty file value, then an
 interactive prompt. Missing values fail when stdin is not interactive.
 
-Normal output masks tokens. The global `--dangerously-print-full-token` flag
-allows commands to request and print complete values. Use it only when the
-value is explicitly needed, and avoid capturing its output in shell history or
+Normal output masks tokens. For CLI commands, the global
+`--dangerously-print-full-token` flag allows complete values to be requested
+and printed. The TUI still fetches masked upstream summaries; the flag only
+prevents an additional local masking pass there. Use dangerous output only
+when a value is explicitly needed, and avoid capturing it in shell history or
 logs.
 
 ## CLI commands
@@ -329,6 +335,10 @@ Returns `200 OK` with process-local counters grouped by upstream:
 }
 ```
 
+`active_streams` counts accepted forwarding requests that have not yet reached
+terminal accounting or released their guard; it includes connection and
+request-upload time before a response stream starts.
+
 ### `GET /api/v1/upstreams`
 
 Returns `200 OK` with all upstream summaries. `auth_token` is masked unless the
@@ -427,6 +437,11 @@ Keep both listeners on loopback unless remote access is intentionally secured
 by additional network controls. The built-in listeners use plain HTTP and do
 not terminate TLS.
 
+The forwarding filter is not a complete RFC hop-by-hop sanitizer: it does not
+remove `Proxy-Authorization`, `Proxy-Authenticate`, `Keep-Alive`, or extension
+headers named by `Connection`. Do not expose the downstream listener to
+untrusted clients that can supply proxy-oriented headers.
+
 Proxy configuration contains all listener and upstream credentials. Restrict
 access to the live file and its backups. Unix writes use mode `0600`; verify
 permissions yourself on other platforms.
@@ -468,8 +483,9 @@ selection falls back to `null`.
 ### `502 upstream_error`
 
 Check the upstream URL, network reachability, credential, redirect target,
-connect timeout, and body idle timeout. Proxy logs include the underlying
-forwarding error while the downstream response stays generic.
+and connect timeout. The configured body idle value does not currently bound
+waiting for the next chunk. Proxy logs include the underlying forwarding error
+while the downstream response stays generic.
 
 ### CLI configuration fails without prompting
 
@@ -477,8 +493,8 @@ Interactive prompts require a terminal. Provide both `--endpoint` and
 `--admin-token`, or create `~/.config/comux.toml` before running from a script.
 
 On a new local file, separate `config set` calls must store `admin-token`
-before `endpoint` because each save validates the resulting complete
-configuration.
+before `endpoint`: current validation requires the token while allowing an
+empty endpoint during partial setup.
 
 ### Listener bind failure
 

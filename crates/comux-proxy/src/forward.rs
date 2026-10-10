@@ -1,4 +1,4 @@
-//! Upstream URL construction, request forwarding, redirects, and stream timeouts.
+//! Upstream URL construction, request forwarding, redirects, and timeout plumbing.
 
 use axum::http::Uri;
 use axum::{body::Body, response::Response};
@@ -39,9 +39,11 @@ pub enum ForwardError {
 /// Forwards one downstream request to a configured upstream.
 ///
 /// The downstream path and query are joined to the configured base URL,
-/// hop-by-hop headers are removed, and the downstream Authorization header is
-/// replaced with the upstream token. Connection establishment and body-chunk
-/// idle time use separate configured limits. Redirect behavior is selected by
+/// a fixed set of connection-specific headers is omitted, and the downstream
+/// Authorization header is replaced with the upstream token. The connect
+/// timeout is enforced. The current body adapter applies its configured idle
+/// timeout only after a chunk has already been yielded, so it does not bound
+/// the wait for the next chunk. Redirect behavior is selected by
 /// [`RedirectPolicy`].
 pub async fn forward_request(
     method: Method,
@@ -184,8 +186,8 @@ pub async fn forward_request(
             builder = builder.header(name, value);
         }
     }
-    // The idle timeout applies between body chunks rather than to total
-    // response duration, allowing long-lived streams that remain active.
+    // `then` receives each item only after the source stream yields it, so this
+    // wrapper currently does not time the wait for the next response chunk.
     let stream = response.bytes_stream().then({
         let idle = Duration::from_secs(connection.idle_timeout_secs);
         move |chunk| async move {
@@ -203,8 +205,9 @@ pub async fn forward_request(
 
 /// Builds one upstream request with end-to-end headers and replacement auth.
 ///
-/// Hop-by-hop headers and the downstream Authorization value are omitted. The
-/// configured upstream token is applied to every request built by this helper.
+/// The fixed set recognized by [`is_hop_by_hop`] and the downstream
+/// Authorization value are omitted. The configured upstream token is applied
+/// to every request built by this helper.
 fn build_request(
     client: &Client,
     method: &Method,
@@ -227,7 +230,11 @@ fn build_request(
     }
 }
 
-/// Returns whether a header is scoped to one transport connection.
+/// Returns whether a header belongs to the proxy's fixed filtered set.
+///
+/// The set contains `Connection`, `Content-Length`, `Host`, `TE`, `Trailer`,
+/// `Transfer-Encoding`, and `Upgrade`. It does not parse extension headers
+/// named by `Connection` or filter `Keep-Alive` and `Proxy-*` headers.
 fn is_hop_by_hop(name: &HeaderName) -> bool {
     matches!(
         name,

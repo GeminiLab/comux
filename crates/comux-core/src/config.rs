@@ -73,19 +73,22 @@ impl ListenerConfig {
     }
 }
 
-/// Timeout settings used when communicating with an upstream.
+/// Configured connection values used by upstream forwarding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectionConfig {
     /// Maximum time allowed to establish an upstream connection, in seconds.
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout_secs: u64,
-    /// Maximum idle time between request or response body chunks, in seconds.
+    /// Intended request/response body idle limit, in seconds.
+    ///
+    /// The current forwarding adapter wraps chunks only after they are
+    /// available, so this value does not yet bound the wait for the next chunk.
     #[serde(default = "default_idle_timeout")]
     pub idle_timeout_secs: u64,
 }
 
 impl Default for ConnectionConfig {
-    /// Uses a 10-second connect timeout and a 120-second body idle timeout.
+    /// Uses a 10-second connect timeout and an idle-timeout value of 120 seconds.
     fn default() -> Self {
         Self {
             connect_timeout_secs: default_connect_timeout(),
@@ -104,7 +107,7 @@ pub struct ProxyConfig {
     pub admin: ListenerConfig,
     /// The listener that accepts Codex requests.
     pub downstream: ListenerConfig,
-    /// Upstream connection and streaming timeout settings.
+    /// Upstream connection settings and the configured stream-idle value.
     pub connection: ConnectionConfig,
     /// Named upstream configurations in deterministic key order.
     pub upstreams: BTreeMap<String, UpstreamConfig>,
@@ -205,9 +208,10 @@ pub struct CliConfig {
 }
 
 impl CliConfig {
-    /// Validates a complete CLI configuration.
+    /// Requires an admin token and validates the endpoint when it is present.
     ///
-    /// The endpoint must use HTTP or HTTPS and the admin token must be present.
+    /// An empty endpoint is accepted by the current validation flow; consumers
+    /// that need to connect will subsequently reject it while building a client.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.validate_partial()?;
         if self.admin_token.is_empty() {
@@ -220,8 +224,7 @@ impl CliConfig {
 
     /// Validates fields that are currently present in a partial CLI configuration.
     ///
-    /// A missing endpoint is accepted so interactive setup can save one value
-    /// at a time.
+    /// Missing values are accepted so local setup may persist partial state.
     pub fn validate_partial(&self) -> Result<(), ConfigError> {
         if self.admin_endpoint.is_empty() {
             return Ok(());

@@ -18,7 +18,11 @@ pub fn default_config_path() -> PathBuf {
         .join("comux.toml")
 }
 
-/// Resolves complete settings, giving explicit overrides precedence over the file.
+/// Resolves file settings with explicit overrides taking precedence.
+///
+/// This applies [`CliConfig::validate`], which currently requires the admin
+/// token but permits an empty endpoint. Client construction rejects an empty
+/// endpoint later.
 pub fn resolve_config(
     path: &Path,
     endpoint_override: Option<String>,
@@ -83,7 +87,11 @@ pub fn resolve_config_interactive(
     Ok(config)
 }
 
-/// Updates one local setting, validates the complete result, and saves it.
+/// Updates one local setting, applies current validation, and saves it.
+///
+/// Validation requires a token but permits an empty endpoint, so a new file
+/// can store `admin-token` first; attempting to store `endpoint` first fails
+/// until a token is present.
 pub fn save_value(
     path: &Path,
     key: super::args::ConfigKey,
