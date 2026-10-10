@@ -1,7 +1,13 @@
+//! Binary entry point for the comux CLI and terminal dashboard.
+
 use clap::Parser;
 use comux::args::CliArgs;
 use comux::commands::run;
 
+/// Parses arguments, creates the async runtime, and dispatches the CLI.
+///
+/// Runtime or command failures are written to stderr and terminate the process
+/// with a non-zero status.
 fn main() {
     let args = CliArgs::parse();
     let runtime = match tokio::runtime::Runtime::new() {

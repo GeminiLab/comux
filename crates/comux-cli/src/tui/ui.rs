@@ -1,3 +1,5 @@
+//! Ratatui layout and rendering for the dashboard and add-upstream modal.
+
 use super::app::{AddField, AddUpstreamForm, App};
 use comux_core::mask_token;
 use comux_core::RedirectPolicy;
@@ -7,6 +9,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
+/// Renders the complete dashboard and optional add-upstream modal.
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -24,6 +27,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     }
 }
 
+/// Renders the title, active upstream, and current status message.
 fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let active = app
         .status
@@ -43,6 +47,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
+/// Splits the main area into upstream and usage panels.
 fn render_body(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -52,6 +57,7 @@ fn render_body(frame: &mut Frame<'_>, area: Rect, app: &App) {
     render_stats(frame, rows[1], app);
 }
 
+/// Renders upstream rows with selection and token masking.
 fn render_upstreams(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let mut lines = Vec::new();
     if app.upstreams.is_empty() {
@@ -84,6 +90,7 @@ fn render_upstreams(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
+/// Renders compact process-local usage counters by upstream.
 fn render_stats(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let mut lines = Vec::new();
     match &app.stats {
@@ -109,6 +116,7 @@ fn render_stats(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
+/// Renders the dashboard keyboard shortcut reference.
 fn render_footer(frame: &mut Frame<'_>, area: Rect, _app: &App) {
     let text = Text::from(vec![
         Line::raw(" j/k or arrows: move   Enter: select   a: add   d: delete "),
@@ -120,6 +128,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, _app: &App) {
     );
 }
 
+/// Renders the centered add-upstream form and any validation error.
 fn render_add_form(frame: &mut Frame<'_>, area: Rect, form: &AddUpstreamForm) {
     let width = area.width.saturating_sub(4).min(70);
     let height = area.height.saturating_sub(4).min(14);
@@ -193,6 +202,7 @@ fn render_add_form(frame: &mut Frame<'_>, area: Rect, form: &AddUpstreamForm) {
     );
 }
 
+/// Returns the human-readable label for an add-form field.
 fn field_name(field: AddField) -> &'static str {
     match field {
         AddField::Name => "Name",
@@ -202,6 +212,7 @@ fn field_name(field: AddField) -> &'static str {
     }
 }
 
+/// Returns the serialized spelling of a redirect policy.
 fn policy_name(policy: &RedirectPolicy) -> &'static str {
     match policy {
         RedirectPolicy::Always => "always",
@@ -210,7 +221,12 @@ fn policy_name(policy: &RedirectPolicy) -> &'static str {
     }
 }
 
+/// Formats a byte count with the smallest practical binary unit.
+///
+/// Byte values are integral. Larger units use no decimal when exact and one
+/// decimal place otherwise.
 pub fn format_bytes(bytes: u64) -> String {
+    /// Binary unit labels indexed by repeated division by 1024.
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut value = bytes as f64;
     let mut unit = 0;

@@ -1,3 +1,5 @@
+//! Dashboard state, remote refreshes, actions, and add-upstream form logic.
+
 use super::events::Action;
 use crate::client::ApiClient;
 use comux_core::api::{StatsResponse, StatusResponse, UpstreamMutation, UpstreamSummary};
@@ -5,37 +7,60 @@ use comux_core::RedirectPolicy;
 use crossterm::event::{KeyCode, KeyEvent};
 use url::Url;
 
+/// Mutable state rendered and manipulated by the terminal dashboard.
 pub struct App {
+    /// Management API client, absent only in render-focused placeholders.
     pub client: Option<ApiClient>,
+    /// Most recently fetched proxy status.
     pub status: Option<StatusResponse>,
+    /// Most recently fetched transport statistics.
     pub stats: Option<StatsResponse>,
+    /// Most recently fetched upstream summaries.
     pub upstreams: Vec<UpstreamSummary>,
+    /// Index of the upstream selected in the dashboard.
     pub selected: usize,
+    /// User-visible connection, success, or error message.
     pub message: String,
+    /// Whether sensitive tokens may be displayed in full.
     pub show_full_tokens: bool,
+    /// Active add-upstream form, if the modal is open.
     pub add_form: Option<AddUpstreamForm>,
+    /// Whether initial selection has already been aligned with active state.
     selection_initialized: bool,
 }
 
+/// The currently edited field in the add-upstream form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddField {
+    /// Upstream name text input.
     Name,
+    /// Base URL text input.
     BaseUrl,
+    /// Upstream bearer-token text input.
     AuthToken,
+    /// Redirect-policy selector.
     RedirectPolicy,
 }
 
+/// Editable state for the add-upstream modal.
 #[derive(Debug, Clone)]
 pub struct AddUpstreamForm {
+    /// The field currently receiving input.
     pub field: AddField,
+    /// Proposed upstream name.
     pub name: String,
+    /// Proposed HTTP or HTTPS base URL.
     pub base_url: String,
+    /// Proposed upstream bearer token.
     pub auth_token: String,
+    /// Proposed redirect policy.
     pub redirect_policy: comux_core::RedirectPolicy,
+    /// Current validation or submission error.
     pub error: Option<String>,
 }
 
 impl Default for AddUpstreamForm {
+    /// Creates an empty form focused on the upstream name.
     fn default() -> Self {
         Self {
             field: AddField::Name,
@@ -49,6 +74,7 @@ impl Default for AddUpstreamForm {
 }
 
 impl App {
+    /// Creates connected dashboard state for a management client.
     pub fn new(client: ApiClient, show_full_tokens: bool) -> Self {
         Self {
             client: Some(client),
@@ -56,10 +82,12 @@ impl App {
         }
     }
 
+    /// Creates disconnected placeholder state suitable for rendering and tests.
     pub fn placeholder() -> Self {
         Self::placeholder_with_tokens(false)
     }
 
+    /// Creates disconnected placeholder state with a chosen token display mode.
     fn placeholder_with_tokens(show_full_tokens: bool) -> Self {
         Self {
             client: None,
@@ -74,7 +102,10 @@ impl App {
         }
     }
 
+    /// Refreshes status, statistics, and upstreams as one dashboard snapshot.
     pub async fn refresh(&mut self) {
+        // Freeze background refresh while editing so network results cannot
+        // replace state that the modal is using between keystrokes.
         if self.add_form.is_some() {
             return;
         }
@@ -87,6 +118,8 @@ impl App {
             client.upstreams(false).await,
         ) {
             (Ok(status), Ok(stats), Ok(upstreams)) => {
+                // Align selection with the active upstream only on the first
+                // successful refresh; later refreshes preserve navigation.
                 if !self.selection_initialized {
                     self.selected = selected_index_for_active(&status.active_upstream, &upstreams);
                     self.selection_initialized = true;
@@ -111,6 +144,9 @@ impl App {
         }
     }
 
+    /// Applies one high-level dashboard action.
+    ///
+    /// Returns `true` only when the event loop should exit.
     pub async fn handle(&mut self, action: Action) -> bool {
         match action {
             Action::Quit => return true,
@@ -157,6 +193,9 @@ impl App {
         false
     }
 
+    /// Handles a key event in either dashboard or add-form mode.
+    ///
+    /// Returns `true` only when the dashboard should exit.
     pub async fn handle_key(&mut self, key: KeyEvent) -> bool {
         if self.add_form.is_some() {
             self.handle_add_form_key(key).await;
@@ -168,7 +207,10 @@ impl App {
         }
     }
 
+    /// Applies one key event to the add-upstream form.
     async fn handle_add_form_key(&mut self, key: KeyEvent) {
+        // Take the form out of `self` while awaiting submission, then restore
+        // it only when editing or validation must continue.
         let Some(mut form) = self.add_form.take() else {
             return;
         };
@@ -210,6 +252,7 @@ impl App {
         self.add_form = Some(form);
     }
 
+    /// Validates and submits the completed add-upstream form.
     async fn submit_add_form(&mut self, form: &AddUpstreamForm) -> Result<(), String> {
         let Some(client) = self.client.clone() else {
             return Err("management client is unavailable".into());
@@ -230,6 +273,7 @@ impl App {
     }
 }
 
+/// Returns the active upstream's index, falling back to the first row.
 fn selected_index_for_active(active: &str, upstreams: &[UpstreamSummary]) -> usize {
     upstreams
         .iter()
@@ -237,6 +281,7 @@ fn selected_index_for_active(active: &str, upstreams: &[UpstreamSummary]) -> usi
         .unwrap_or(0)
 }
 
+/// Returns the mutable text buffer for the form's current text field.
 fn current_value_mut(form: &mut AddUpstreamForm) -> &mut String {
     match form.field {
         AddField::Name => &mut form.name,
@@ -246,6 +291,7 @@ fn current_value_mut(form: &mut AddUpstreamForm) -> &mut String {
     }
 }
 
+/// Advances to the next add-form field, wrapping after redirect policy.
 fn next_field(field: AddField) -> AddField {
     match field {
         AddField::Name => AddField::BaseUrl,
@@ -255,6 +301,7 @@ fn next_field(field: AddField) -> AddField {
     }
 }
 
+/// Cycles redirect policies forward or backward.
 fn cycle_policy(policy: RedirectPolicy, forward: bool) -> RedirectPolicy {
     use RedirectPolicy::{Always, Default, Never};
     match (policy, forward) {
@@ -267,6 +314,7 @@ fn cycle_policy(policy: RedirectPolicy, forward: bool) -> RedirectPolicy {
     }
 }
 
+/// Validates the add-form field that is currently active.
 fn validate_field(form: &AddUpstreamForm) -> Result<(), String> {
     match form.field {
         AddField::Name if form.name.trim().is_empty() => Err("name is required".into()),

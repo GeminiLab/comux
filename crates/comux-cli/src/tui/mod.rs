@@ -1,5 +1,10 @@
+//! Interactive terminal dashboard for monitoring and managing a proxy.
+
+/// Dashboard state, refreshes, mutations, and add-upstream form handling.
 pub mod app;
+/// Conversion of keyboard events into dashboard actions.
 pub mod events;
+/// Ratatui layout and rendering helpers.
 pub mod ui;
 
 use crate::args::CliArgs;
@@ -16,6 +21,10 @@ use ratatui::Terminal;
 use std::io;
 use std::time::{Duration, Instant};
 
+/// Opens the terminal dashboard using resolved management settings.
+///
+/// This performs an initial refresh, enters raw alternate-screen mode, runs
+/// the event loop, and restores the terminal before returning its result.
 pub async fn run(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     let path = default_config_path();
     let config =
@@ -29,6 +38,8 @@ pub async fn run(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    // Capture the loop result before cleanup so terminal state is restored
+    // before a success or error is returned to the caller.
     let result = run_loop(&mut terminal, &mut app).await;
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -36,6 +47,7 @@ pub async fn run(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     result
 }
 
+/// Redraws, handles keyboard input, and refreshes remote state every two seconds.
 async fn run_loop<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,

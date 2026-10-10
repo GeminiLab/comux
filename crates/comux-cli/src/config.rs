@@ -1,3 +1,5 @@
+//! Resolution and persistence of local CLI connection settings.
+
 use comux_core::persistence::load_cli_config;
 use comux_core::persistence::save_cli_config;
 use comux_core::{CliConfig, ConfigError};
@@ -5,6 +7,10 @@ use rpassword::prompt_password;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
+/// Returns the default local CLI configuration path.
+///
+/// The path is `$HOME/.config/comux.toml`, falling back to a relative
+/// `.config/comux.toml` when no home directory is available.
 pub fn default_config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -12,6 +18,7 @@ pub fn default_config_path() -> PathBuf {
         .join("comux.toml")
 }
 
+/// Resolves complete settings, giving explicit overrides precedence over the file.
 pub fn resolve_config(
     path: &Path,
     endpoint_override: Option<String>,
@@ -29,6 +36,10 @@ pub fn resolve_config(
     Ok(config)
 }
 
+/// Resolves settings from overrides, file values, or interactive prompts.
+///
+/// Each field is resolved independently in that order. When no overrides were
+/// supplied, newly prompted values are persisted after complete validation.
 pub fn resolve_config_interactive(
     path: &Path,
     endpoint_override: Option<String>,
@@ -38,6 +49,8 @@ pub fn resolve_config_interactive(
         admin_endpoint: String::new(),
         admin_token: String::new(),
     });
+    // Resolve each value independently in precedence order: command-line
+    // override, non-empty file value, then an interactive prompt.
     let endpoint = match endpoint_override
         .clone()
         .or_else(|| non_empty(&file.admin_endpoint))
@@ -70,6 +83,7 @@ pub fn resolve_config_interactive(
     Ok(config)
 }
 
+/// Updates one local setting, validates the complete result, and saves it.
 pub fn save_value(
     path: &Path,
     key: super::args::ConfigKey,
@@ -88,10 +102,12 @@ pub fn save_value(
     Ok(config)
 }
 
+/// Clones a non-empty setting or returns `None`.
 fn non_empty(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_owned())
 }
 
+/// Reads a management endpoint from an interactive terminal.
 fn prompt_endpoint() -> Result<String, ConfigError> {
     if !io::stdin().is_terminal() {
         return Err(ConfigError::Invalid(

@@ -1,3 +1,5 @@
+//! Command dispatch, prompting, management calls, and terminal output.
+
 use crate::args::{AuthAction, CliArgs, Command, ConfigAction, ConfigKey, UpstreamAction};
 use crate::client::ApiClient;
 use crate::config::{default_config_path, resolve_config_interactive, save_value};
@@ -9,9 +11,12 @@ use rpassword::prompt_password;
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
+/// Dispatches a parsed command or starts the TUI when no command was supplied.
 pub async fn run(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     let path = default_config_path();
     match args.command.clone() {
+        // Configuration commands operate locally and therefore do not require
+        // a reachable management endpoint; other commands resolve a client.
         Some(Command::Config(command)) => {
             run_config(&path, command.action, args.dangerously_print_full_token)?
         }
@@ -33,12 +38,14 @@ pub async fn run(args: CliArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Resolves CLI settings and constructs a management API client.
 fn client_from_args(path: &Path, args: &CliArgs) -> Result<ApiClient, ConfigError> {
     let config = resolve_config_interactive(path, args.endpoint.clone(), args.admin_token.clone())?;
     ApiClient::new(&config.admin_endpoint, config.admin_token)
         .map_err(|error| ConfigError::Invalid(error.to_string()))
 }
 
+/// Displays, reads, or updates local CLI configuration.
 fn run_config(
     path: &Path,
     action: Option<ConfigAction>,
@@ -76,6 +83,7 @@ fn run_config(
     Ok(())
 }
 
+/// Reads one local setting, interactively creating it when absent.
 fn get_local_value(path: &Path, key: ConfigKey) -> Result<String, ConfigError> {
     let config = load_cli_config(path)?.unwrap_or(comux_core::CliConfig {
         admin_endpoint: String::new(),
@@ -97,6 +105,7 @@ fn get_local_value(path: &Path, key: ConfigKey) -> Result<String, ConfigError> {
     }
 }
 
+/// Reads a management endpoint from an interactive terminal.
 fn prompt_endpoint_value() -> Result<String, ConfigError> {
     if !io::stdin().is_terminal() {
         return Err(ConfigError::Invalid(
@@ -110,6 +119,7 @@ fn prompt_endpoint_value() -> Result<String, ConfigError> {
     Ok(endpoint.trim().to_owned())
 }
 
+/// Executes an upstream list, add, replacement, removal, or selection action.
 async fn run_upstream(
     path: &Path,
     args: &CliArgs,
@@ -140,6 +150,8 @@ async fn run_upstream(
             client.put_upstream(&options.name, payload).await?;
         }
         UpstreamAction::Set(options) => {
+            // Updating without a replacement token explicitly fetches the full
+            // current credential because PUT sends a complete replacement.
             let token = match options.options.auth_token {
                 Some(token) => token,
                 None => {
@@ -165,6 +177,7 @@ async fn run_upstream(
     Ok(())
 }
 
+/// Prints or regenerates the downstream client token.
 async fn run_auth(
     path: &Path,
     args: &CliArgs,
@@ -198,6 +211,7 @@ async fn run_auth(
     Ok(())
 }
 
+/// Parses the user-facing redirect policy spelling.
 fn parse_redirect_policy(value: &str) -> Result<RedirectPolicy, ConfigError> {
     match value {
         "always" => Ok(RedirectPolicy::Always),
@@ -209,7 +223,10 @@ fn parse_redirect_policy(value: &str) -> Result<RedirectPolicy, ConfigError> {
     }
 }
 
+/// Returns a full token only when dangerous output was explicitly enabled.
 fn display_token(token: &str, dangerous: bool) -> String {
+    // Full output requires the global dangerous flag; ordinary output masks
+    // credentials even when an API response contains a full value.
     if dangerous {
         token.to_owned()
     } else {
@@ -217,6 +234,7 @@ fn display_token(token: &str, dangerous: bool) -> String {
     }
 }
 
+/// Prompts for a local configuration value, hiding admin-token input.
 fn prompt_value(key: ConfigKey) -> Result<String, ConfigError> {
     match key {
         ConfigKey::Endpoint => {
@@ -230,6 +248,7 @@ fn prompt_value(key: ConfigKey) -> Result<String, ConfigError> {
     }
 }
 
+/// Returns the CLI spelling of a configuration key.
 fn config_key_name(key: ConfigKey) -> &'static str {
     match key {
         ConfigKey::Endpoint => "endpoint",
@@ -237,6 +256,7 @@ fn config_key_name(key: ConfigKey) -> &'static str {
     }
 }
 
+/// Prompts for a yes/no confirmation and accepts `y` or `yes`.
 fn confirm(prompt: &str) -> Result<bool, io::Error> {
     print!("{prompt}");
     io::stdout().flush()?;
