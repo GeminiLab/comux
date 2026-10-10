@@ -1,3 +1,5 @@
+//! Authenticated management routes for inspecting and mutating proxy state.
+
 use crate::auth::is_valid;
 use crate::server::ProxyApp;
 use axum::extract::{Path, Query, State};
@@ -16,12 +18,19 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// State shared by all management API handlers.
 #[derive(Clone)]
 struct AdminApp {
+    /// The proxy application whose runtime state and statistics are managed.
     proxy: ProxyApp,
+    /// The file atomically replaced after successful configuration mutations.
     config_path: Arc<PathBuf>,
 }
 
+/// Builds the authenticated management router for a proxy application.
+///
+/// The router exposes status, statistics, upstream mutation and selection,
+/// and downstream-token inspection and regeneration under `/api/v1`.
 pub fn router(proxy: ProxyApp, config_path: PathBuf) -> Router {
     let state = AdminApp {
         proxy,
@@ -44,11 +53,13 @@ pub fn router(proxy: ProxyApp, config_path: PathBuf) -> Router {
         .with_state(state)
 }
 
+/// Checks the request's Bearer token against the current admin token.
 async fn authorized(app: &AdminApp, headers: &HeaderMap) -> bool {
     let token = app.proxy.state.read().await.config().admin.token.clone();
     is_valid(headers, &token)
 }
 
+/// Returns listener details, active selection, and configured upstream names.
 async fn status(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
     if !authorized(&app, &headers).await {
         return api_error(
@@ -70,6 +81,7 @@ async fn status(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
     .into_response()
 }
 
+/// Returns a process-local snapshot of transport statistics.
 async fn stats(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
     if !authorized(&app, &headers).await {
         return api_error(
@@ -81,6 +93,7 @@ async fn stats(State(app): State<AdminApp>, headers: HeaderMap) -> Response {
     Json(app.proxy.stats.snapshot()).into_response()
 }
 
+/// Lists configured upstreams with credentials masked unless explicitly revealed.
 async fn list_upstreams(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -94,6 +107,8 @@ async fn list_upstreams(
         );
     }
     let state = app.proxy.state.read().await;
+    // Full credentials require both admin authentication and an explicit
+    // `reveal=full`; all ordinary responses remain masked.
     let upstreams: Vec<_> = state
         .config()
         .upstreams
@@ -119,6 +134,7 @@ async fn list_upstreams(
     Json(upstreams).into_response()
 }
 
+/// Creates or completely replaces one upstream and persists the new state.
 async fn put_upstream(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -133,6 +149,8 @@ async fn put_upstream(
         );
     }
     let mut state = app.proxy.state.write().await;
+    // Mutate and validate a candidate, persist it while holding the write lock,
+    // and publish it only after the durable write succeeds.
     let mut candidate = state.clone();
     let upstream = UpstreamConfig {
         base_url: payload.base_url,
@@ -157,6 +175,7 @@ async fn put_upstream(
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// Deletes an upstream, persisting `null` selection when it was active.
 async fn delete_upstream(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -170,6 +189,8 @@ async fn delete_upstream(
         );
     }
     let mut state = app.proxy.state.write().await;
+    // Mutate and validate a candidate, persist it while holding the write lock,
+    // and publish it only after the durable write succeeds.
     let mut candidate = state.clone();
     if let Err(error) = candidate.delete_upstream(&name) {
         return api_error(StatusCode::NOT_FOUND, "not_found", &error.to_string());
@@ -185,6 +206,7 @@ async fn delete_upstream(
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// Selects an existing upstream for new downstream requests and persists it.
 async fn select_active(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -198,6 +220,8 @@ async fn select_active(
         );
     }
     let mut state = app.proxy.state.write().await;
+    // Mutate and validate a candidate, persist it while holding the write lock,
+    // and publish it only after the durable write succeeds.
     let mut candidate = state.clone();
     if let Err(error) = candidate.select_upstream(&payload.name) {
         return api_error(StatusCode::NOT_FOUND, "not_found", &error.to_string());
@@ -213,11 +237,14 @@ async fn select_active(
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// Optional query parameters controlling whether sensitive values are revealed.
 #[derive(Debug, Deserialize)]
 struct RevealQuery {
+    /// Reveals a full credential only when this value is exactly `full`.
     reveal: Option<String>,
 }
 
+/// Returns the downstream client token in masked or explicitly revealed form.
 async fn client_token(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -232,6 +259,8 @@ async fn client_token(
     }
     let state = app.proxy.state.read().await;
     let token = &state.config().downstream.token;
+    // Full credentials require both admin authentication and an explicit
+    // `reveal=full`; all ordinary responses remain masked.
     let token = if query.reveal.as_deref() == Some("full") {
         token.clone()
     } else {
@@ -240,6 +269,7 @@ async fn client_token(
     Json(ClientTokenResponse { token }).into_response()
 }
 
+/// Generates, persists, and returns a replacement downstream client token.
 async fn regenerate_client_token(
     State(app): State<AdminApp>,
     headers: HeaderMap,
@@ -253,6 +283,8 @@ async fn regenerate_client_token(
         );
     }
     let mut state = app.proxy.state.write().await;
+    // Mutate and validate a candidate, persist it while holding the write lock,
+    // and publish it only after the durable write succeeds.
     let mut candidate = state.clone();
     let token = candidate.regenerate_client_token();
     if let Err(error) = save_proxy_config(&app.config_path, candidate.config()) {
@@ -271,6 +303,7 @@ async fn regenerate_client_token(
     Json(ClientTokenResponse { token }).into_response()
 }
 
+/// Creates a JSON error envelope with the supplied HTTP status and details.
 fn api_error(status: StatusCode, error_type: &str, message: &str) -> Response {
     (
         status,

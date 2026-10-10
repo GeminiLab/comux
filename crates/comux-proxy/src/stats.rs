@@ -1,14 +1,19 @@
+//! Thread-safe process-local transport statistics grouped by upstream.
+
 use comux_core::api::{StatsResponse, TransportStats};
 use http::StatusCode;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+/// Cloneable registry of in-memory counters keyed by upstream name.
 #[derive(Clone, Default)]
 pub struct StatsRegistry {
+    /// Shared mutable counters protected from concurrent updates.
     inner: Arc<Mutex<BTreeMap<String, TransportStats>>>,
 }
 
 impl StatsRegistry {
+    /// Records an accepted request and returns its terminal-accounting guard.
     pub fn begin(&self, upstream: impl Into<String>) -> RequestStatsGuard {
         let upstream = upstream.into();
         let mut stats = self.inner.lock().expect("stats lock");
@@ -23,44 +28,57 @@ impl StatsRegistry {
         }
     }
 
+    /// Clones all current counters into a serializable snapshot.
     pub fn snapshot(&self) -> StatsResponse {
         StatsResponse {
             by_upstream: self.inner.lock().expect("stats lock").clone(),
         }
     }
 
+    /// Adds downstream request-body bytes for an upstream.
     pub fn record_request_bytes(&self, upstream: &str, bytes: u64) {
         self.with_stats(upstream, |stats| stats.request_bytes += bytes);
     }
 
+    /// Adds upstream response-body bytes for an upstream.
     pub fn record_response_bytes(&self, upstream: &str, bytes: u64) {
         self.with_stats(upstream, |stats| stats.response_bytes += bytes);
     }
 
+    /// Applies one update while holding the counter map lock.
     fn with_stats(&self, upstream: &str, update: impl FnOnce(&mut TransportStats)) {
         let mut stats = self.inner.lock().expect("stats lock");
         update(stats.entry(upstream.to_owned()).or_default());
     }
 }
 
+/// Ensures an accepted request releases its active-stream count exactly once.
 pub struct RequestStatsGuard {
+    /// Registry receiving this request's terminal accounting.
     registry: StatsRegistry,
+    /// Upstream key used by this request.
     upstream: String,
+    /// Whether terminal accounting has already released the active stream.
     released: bool,
 }
 
 impl RequestStatsGuard {
+    /// Adds request-body bytes to this request's upstream counters.
     pub fn add_request_bytes(&self, bytes: u64) {
         self.registry
             .with_stats(&self.upstream, |stats| stats.request_bytes += bytes);
     }
 
+    /// Adds response-body bytes to this request's upstream counters.
     pub fn add_response_bytes(&self, bytes: u64) {
         self.registry
             .with_stats(&self.upstream, |stats| stats.response_bytes += bytes);
     }
 
+    /// Records a completed response's status and duration and releases it.
     pub fn finish_response(&mut self, status: StatusCode, duration_ms: u64) {
+        // The released flag makes terminal accounting idempotent when multiple
+        // stream paths attempt cleanup.
         if self.released {
             return;
         }
@@ -79,6 +97,7 @@ impl RequestStatsGuard {
         self.released = true;
     }
 
+    /// Records a transport failure and releases the active stream.
     pub fn network_error(&mut self) {
         if self.released {
             return;
@@ -92,6 +111,7 @@ impl RequestStatsGuard {
 }
 
 impl Drop for RequestStatsGuard {
+    /// Releases an abandoned stream without inventing a response or network error.
     fn drop(&mut self) {
         if !self.released {
             self.registry.with_stats(&self.upstream, |stats| {

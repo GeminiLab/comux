@@ -1,3 +1,5 @@
+//! Shared proxy application state and downstream request handling.
+
 use crate::admin;
 use crate::auth::is_valid;
 use crate::forward::forward_request;
@@ -14,13 +16,17 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
+/// Cloneable application state shared by data-plane and management routers.
 #[derive(Clone)]
 pub struct ProxyApp {
+    /// Validated runtime configuration protected for concurrent reads and mutations.
     pub state: Arc<RwLock<RuntimeState>>,
+    /// Process-local transport counters.
     pub stats: crate::stats::StatsRegistry,
 }
 
 impl ProxyApp {
+    /// Creates an application around validated runtime state.
     pub fn new(state: RuntimeState) -> Self {
         Self {
             state: Arc::new(RwLock::new(state)),
@@ -28,15 +34,23 @@ impl ProxyApp {
         }
     }
 
+    /// Builds the downstream router, forwarding every unmatched path.
     pub fn router(self) -> Router {
         Router::new().fallback(handle_downstream).with_state(self)
     }
 
+    /// Builds the separately authenticated management router.
     pub fn admin_router(self, config_path: PathBuf) -> Router {
         admin::router(self, config_path)
     }
 }
 
+/// Authenticates and forwards one downstream request.
+///
+/// A short state read captures the token, connection settings, and an owned
+/// upstream snapshot. Selection changes therefore affect new requests but not
+/// a request already in flight. The returned body stream accounts for bytes,
+/// status, duration, and transport failures as it is consumed.
 pub async fn handle_downstream(
     State(app): State<ProxyApp>,
     method: Method,
@@ -44,6 +58,8 @@ pub async fn handle_downstream(
     headers: axum::http::HeaderMap,
     body: Body,
 ) -> Response {
+    // Clone the routing decision and connection settings under a short read
+    // lock; later management changes affect new requests but not this request.
     let (token, snapshot, connection) = {
         let state = app.state.read().await;
         (
@@ -83,6 +99,9 @@ pub async fn handle_downstream(
             let status = response.status();
             let (parts, response_body) = response.into_parts();
             let stats = app.stats.clone();
+            // Keep the completion guard inside the downstream body stream so
+            // duration and status are finalized only when the body is fully
+            // consumed.
             let stream = stream::unfold(
                 (
                     response_body.into_data_stream(),
@@ -133,6 +152,7 @@ pub async fn handle_downstream(
     }
 }
 
+/// Builds the common JSON error envelope used by the downstream plane.
 fn json_error(status: StatusCode, error_type: &str, message: &str) -> Response {
     (
         status,

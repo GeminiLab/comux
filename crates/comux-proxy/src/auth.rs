@@ -1,12 +1,21 @@
+//! Parsing and exact validation of HTTP Bearer credentials.
+
 use axum::http::header::AUTHORIZATION;
 use axum::http::HeaderMap;
 
+/// A failure to extract a syntactically valid Bearer token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthError {
+    /// The request does not contain an Authorization header.
     Missing,
+    /// The Authorization header is not a single non-empty Bearer token.
     Invalid,
 }
 
+/// Extracts one Bearer token from request headers.
+///
+/// The scheme is matched case-insensitively. The token must be non-empty and
+/// must not contain spaces.
 pub fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
     let value = headers.get(AUTHORIZATION).ok_or(AuthError::Missing)?;
     let value = value.to_str().map_err(|_| AuthError::Invalid)?;
@@ -17,6 +26,7 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
     Ok(token)
 }
 
+/// Returns whether the request contains a Bearer token exactly equal to `expected`.
 pub fn is_valid(headers: &HeaderMap, expected: &str) -> bool {
     bearer_token(headers).is_ok_and(|token| token == expected)
 }

@@ -1,3 +1,5 @@
+//! Upstream URL construction, request forwarding, redirects, and stream timeouts.
+
 use axum::http::Uri;
 use axum::{body::Body, response::Response};
 use bytes::Bytes;
@@ -14,20 +16,33 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
+/// A failure while preparing, sending, redirecting, or rebuilding a request.
 #[derive(Debug, thiserror::Error)]
 pub enum ForwardError {
+    /// The configured upstream base URL could not be parsed.
     #[error("invalid upstream URL: {0}")]
     Url(#[from] url::ParseError),
+    /// Building or sending the reqwest request failed.
     #[error("upstream request failed: {0}")]
     Request(#[from] reqwest::Error),
+    /// An explicitly followed redirect chain exceeded the ten-hop limit.
     #[error("upstream redirect chain exceeded 10 hops")]
     TooManyRedirects,
+    /// A redirect Location header was not valid text or could not be resolved.
     #[error("upstream redirect had an invalid location")]
     InvalidRedirectLocation,
+    /// The downstream HTTP response could not be constructed.
     #[error("failed to build downstream response: {0}")]
     Response(#[from] http::Error),
 }
 
+/// Forwards one downstream request to a configured upstream.
+///
+/// The downstream path and query are joined to the configured base URL,
+/// hop-by-hop headers are removed, and the downstream Authorization header is
+/// replaced with the upstream token. Connection establishment and body-chunk
+/// idle time use separate configured limits. Redirect behavior is selected by
+/// [`RedirectPolicy`].
 pub async fn forward_request(
     method: Method,
     request_uri: &Uri,
@@ -48,6 +63,13 @@ pub async fn forward_request(
 
     let response = match upstream.redirect_policy {
         RedirectPolicy::Always => {
+            // Disable reqwest redirect handling for this branch so comux can
+            // deliberately re-inject the upstream credential on every hop,
+            // including cross-host hops.
+            //
+            // `always` must replay bodies for 307/308 redirects, so record
+            // chunks while streaming the first request instead of buffering
+            // before the first hop.
             let recorded = Arc::new(Mutex::new(Vec::<Bytes>::new()));
             let request_stream = request_body.into_data_stream().map({
                 let recorded = Arc::clone(&recorded);
@@ -106,6 +128,9 @@ pub async fn forward_request(
                     next_response.status(),
                     http::StatusCode::TEMPORARY_REDIRECT | http::StatusCode::PERMANENT_REDIRECT
                 );
+                // RFC-style 307/308 redirects preserve method and body; other
+                // redirects convert non-GET/HEAD requests to GET and discard
+                // the body.
                 if preserve_body {
                     let body = recorded.lock().expect("body recorder lock").iter().fold(
                         Vec::new(),
@@ -159,6 +184,8 @@ pub async fn forward_request(
             builder = builder.header(name, value);
         }
     }
+    // The idle timeout applies between body chunks rather than to total
+    // response duration, allowing long-lived streams that remain active.
     let stream = response.bytes_stream().then({
         let idle = Duration::from_secs(connection.idle_timeout_secs);
         move |chunk| async move {
@@ -174,6 +201,10 @@ pub async fn forward_request(
     Ok(builder.body(Body::from_stream(stream))?)
 }
 
+/// Builds one upstream request with end-to-end headers and replacement auth.
+///
+/// Hop-by-hop headers and the downstream Authorization value are omitted. The
+/// configured upstream token is applied to every request built by this helper.
 fn build_request(
     client: &Client,
     method: &Method,
@@ -196,6 +227,7 @@ fn build_request(
     }
 }
 
+/// Returns whether a header is scoped to one transport connection.
 fn is_hop_by_hop(name: &HeaderName) -> bool {
     matches!(
         name,
@@ -203,6 +235,10 @@ fn is_hop_by_hop(name: &HeaderName) -> bool {
     )
 }
 
+/// Appends a downstream path to an upstream base path and copies its query.
+///
+/// Leading and trailing separators are normalized without discarding a base
+/// path such as `/v1`.
 pub fn join_upstream_url(base_url: &str, request_uri: &Uri) -> Result<Url, url::ParseError> {
     let mut base = Url::parse(base_url)?;
     let base_path = base.path().trim_end_matches('/');
