@@ -1,5 +1,9 @@
 # comux CLI
 
+[![crates.io](https://img.shields.io/crates/v/comux.svg)](https://crates.io/crates/comux)
+[![docs.rs](https://docs.rs/comux/badge.svg)](https://docs.rs/comux)
+[![license](https://img.shields.io/crates/l/comux.svg)](https://crates.io/crates/comux)
+
 The `comux` crate provides the command-line client and ratatui dashboard for a
 running `comux-proxy` management endpoint. It stores local connection settings
 in `~/.config/comux.toml`; running `comux` without a subcommand opens the TUI.

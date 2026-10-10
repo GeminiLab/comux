@@ -1,5 +1,11 @@
 # comux
 
+[![comux](https://img.shields.io/crates/v/comux.svg?label=comux)](https://crates.io/crates/comux)
+[![comux-proxy](https://img.shields.io/crates/v/comux-proxy.svg?label=comux-proxy)](https://crates.io/crates/comux-proxy)
+[![comux-core](https://img.shields.io/crates/v/comux-core.svg?label=comux-core)](https://crates.io/crates/comux-core)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 comux is a local Codex API proxy and upstream selector. Codex sends requests to
 one downstream endpoint, while the `comux` CLI and TUI use a separately
 authenticated management endpoint. Each downstream request is forwarded to a

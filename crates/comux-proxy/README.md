@@ -1,5 +1,9 @@
 # comux-proxy
 
+[![crates.io](https://img.shields.io/crates/v/comux-proxy.svg)](https://crates.io/crates/comux-proxy)
+[![docs.rs](https://docs.rs/comux-proxy/badge.svg)](https://docs.rs/comux-proxy)
+[![license](https://img.shields.io/crates/l/comux-proxy.svg)](https://crates.io/crates/comux-proxy)
+
 `comux-proxy` is the comux HTTP proxy. It exposes a downstream endpoint for
 Codex and a separately authenticated management endpoint for the `comux` CLI.
 The library modules are also used by the integration tests.
